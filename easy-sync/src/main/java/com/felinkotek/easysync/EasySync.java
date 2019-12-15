@@ -140,6 +140,10 @@ public class EasySync {
         },getHeaders(),syncItems.get(index));
     }
 
+    public void dismissDialog(){
+        if(progressDialog!=null) progressDialog.dismiss();
+    }
+
     /**
      * Save data from response payload
      * @param jsonArray response payload
