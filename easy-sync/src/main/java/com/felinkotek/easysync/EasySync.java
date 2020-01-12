@@ -1,19 +1,23 @@
 package com.felinkotek.easysync;
 
 import android.app.ProgressDialog;
+import android.content.ContentValues;
 import android.content.Context;
 import android.database.SQLException;
 import android.database.sqlite.SQLiteDatabase;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 
 import androidx.annotation.Nullable;
+import androidx.room.OnConflictStrategy;
 import androidx.sqlite.db.SupportSQLiteDatabase;
 
 import com.felinkotek.easysync.annotations.Map;
 import com.felinkotek.easysync.annotations.Parser;
 import com.felinkotek.easysync.networking.ApiCall;
 import com.felinkotek.easysync.syncmodel.EasySyncError;
-import com.felinkotek.easysync.syncmodel.SyncItem;
+import com.felinkotek.easysync.syncmodel.EasySyncItem;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -39,7 +43,7 @@ public class EasySync {
     private String loadingMessage ;
     private boolean showProgress = true ;
     private boolean setProgressCancelable = false ;
-    private List<SyncItem> syncItems ;
+    private List<EasySyncItem> syncItems ;
     private HashMap<String,String> headers ;
     private ApiCall apiCall ;
     private boolean showInsertLog = false;
@@ -93,51 +97,91 @@ public class EasySync {
     }
 
     private void startDownload(int index){
-        if(syncListener!=null){
-            if(index<syncItems.size()-1) syncListener.onQueueChanged(index,syncItems.get(index)) ;
-        }
-        /**
-         * Start downloading data
-         */
-        com.felinkotek.easysync.annotations.EasySync easySync = syncItems.get(index).getSyncClass().getAnnotation(com.felinkotek.easysync.annotations.EasySync.class) ;
-        if(easySync==null){
-            if(index>=syncItems.size()-1) {
-                /** Dismiss progress dialog */
-                progressDialog.dismiss();
-                syncErrors.add(new EasySyncError(syncItems.get(index).getSyncClass(),"Class not annotated with @EasySync")) ;
-                if (syncListener != null) syncListener.onComplete(syncErrors.size()<1,syncErrors);
-            }else startDownload(index+1);
-            return ;
-        }
-        apiCall.downloadData(context, syncItems.get(index).getUrl(), new ApiCall.DownloadFinish() {
+        new Thread(new Runnable() {
             @Override
-            public void onSuccess(JSONArray payloadResponse) {
-                /** User url is {@ Very super } and returned 200 http status code */
-                try {
-                    /** Save data */
-                    saveData(payloadResponse,syncItems.get(index).getSyncClass(),index);
-                }catch (JSONException e){
-                    /** Dismiss progress dialog */
-                    progressDialog.dismiss();
-                    /** Notify user of if any json key provided cannot be found in the response payload */
-                    if(index>=syncItems.size()-1) {
-                        syncErrors.add(new EasySyncError(syncItems.get(index).getSyncClass(),e.toString())) ;
-                        if (syncListener != null) syncListener.onComplete(syncErrors.size()<1,syncErrors);
-                    }else startDownload(index+1);
+            public void run() {
+                if(syncListener!=null){
+                    if(index<syncItems.size()-1) {
+                        new Handler(Looper.getMainLooper()).post(new Runnable() {
+                            @Override
+                            public void run() {
+                                syncListener.onQueueChanged(index,syncItems.get(index)) ;
+                            }
+                        }) ;
+                    }
                 }
-            }
+                /**
+                 * Start downloading data
+                 */
+                com.felinkotek.easysync.annotations.EasySync easySync = syncItems.get(index).getSyncClass().getAnnotation(com.felinkotek.easysync.annotations.EasySync.class) ;
+                if(easySync==null){
+                    if(index>=syncItems.size()-1) {
+                        /** Dismiss progress dialog */
+                        progressDialog.dismiss();
+                        syncErrors.add(new EasySyncError(syncItems.get(index).getSyncClass(),"Class not annotated with @EasySync")) ;
+                        if (syncListener != null) {
+                            new Handler(Looper.getMainLooper()).post(new Runnable() {
+                                @Override
+                                public void run() {
+                                    syncListener.onComplete(syncErrors.size() < 1, syncErrors);
+                                }
+                            }) ;
+                        }
+                    }else startDownload(index+1);
+                    return ;
+                }
+                String tableName = (easySync.tableName().trim().equals("")) ? syncItems.get(index).getSyncClass().getSimpleName() : easySync.tableName();
 
-            @Override
-            public void onFailure(EasySyncError error) {
-                /** Notify user of error returned by the server is {@syncListener} is set*/
-                if(index>=syncItems.size()-1) {
-                    /** Dismiss progress dialog */
-                    progressDialog.dismiss();
-                    syncErrors.add(error) ;
-                    if (syncListener != null) syncListener.onComplete(syncErrors.size()<1,syncErrors);
-                }else startDownload(index+1);
+                apiCall.downloadData(context, syncItems.get(index).getUrl(), new ApiCall.DownloadFinish() {
+                    @Override
+                    public void onSuccess(JSONArray payloadResponse) {
+                        /** User url is {@ Very super } and returned 200 http status code */
+                        new Thread(new Runnable() {
+                            @Override
+                            public void run() {
+                                try {
+                                    /** Save data */
+                                    saveData(tableName,payloadResponse,syncItems.get(index).getSyncClass(),index);
+                                }catch (JSONException e){
+                                    /** Dismiss progress dialog */
+                                    progressDialog.dismiss();
+                                    /** Notify user of if any json key provided cannot be found in the response payload */
+                                    if(index>=syncItems.size()-1) {
+                                        syncErrors.add(new EasySyncError(syncItems.get(index).getSyncClass(),e.toString())) ;
+                                        if (syncListener != null) {
+                                            new Handler(Looper.getMainLooper()).post(new Runnable() {
+                                                @Override
+                                                public void run() {
+                                                    syncListener.onComplete(syncErrors.size() < 1, syncErrors);
+                                                }
+                                            });
+                                        }
+                                    }else startDownload(index+1);
+                                }
+                            }
+                        }).start();
+                    }
+
+                    @Override
+                    public void onFailure(EasySyncError error) {
+                        /** Notify user of error returned by the server is {@syncListener} is set*/
+                        if(index>=syncItems.size()-1) {
+                            /** Dismiss progress dialog */
+                            progressDialog.dismiss();
+                            syncErrors.add(error) ;
+                            if (syncListener != null) {
+                                new Handler(Looper.getMainLooper()).post(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        syncListener.onComplete(syncErrors.size() < 1, syncErrors);
+                                    }
+                                }) ;
+                            }
+                        }else startDownload(index+1);
+                    }
+                },getHeaders(),syncItems.get(index));
             }
-        },getHeaders(),syncItems.get(index));
+        }) ;
     }
 
     public void dismissDialog(){
@@ -149,27 +193,19 @@ public class EasySync {
      * @param jsonArray response payload
      * @throws JSONException catch Exception
      */
-    private void saveData(JSONArray jsonArray,Class<?> syncClass,int index) throws JSONException {
+    private void saveData(String tableName,JSONArray jsonArray,Class<?> syncClass,int index) throws JSONException {
         /** Get all class properties {@Fields} */
         Field[] fields = syncClass.getDeclaredFields() ;
         /** Get Annotation of type @EasySync */
         com.felinkotek.easysync.annotations.EasySync liveSync = syncClass.getAnnotation(com.felinkotek.easysync.annotations.EasySync.class) ;
         /** Check if class has been Annotated with @EasySync */
         if(liveSync!=null) {
+            EasySyncItem easySyncItem = syncItems.get(index) ;
             /** Loop through JSONArray */
+            int counter = 0 ;
             for(int i=0;i<jsonArray.length();i++) {
-                /** This will contain a query formatted columns needed for the query */
-                StringBuilder columnsBuilder = new StringBuilder() ;
-                /** This will contain all the values mapped to each specified column */
-                StringBuilder valuesBuilder = new StringBuilder() ;
-                /** This will contain the full queryString for SQLITE */
-                StringBuilder queryBuilder = new StringBuilder();
-
-                /** Add first open bracket for columns with will be for example (`name`,`any */
-                columnsBuilder.append("(");
-
-                /** Get JSONObject from specified position in the loop*/
                 JSONObject obj = jsonArray.getJSONObject(i) ;
+                ContentValues contentValues = new ContentValues() ;
                 /** Loop through each an every field in the class */
                 for (Field field : fields) {
                     /** Get Annotation of type {@ @Live}*/
@@ -181,61 +217,58 @@ public class EasySync {
                         // check if column name is different from variable name
                         if(map.to().isEmpty()) fieldName = field.getName() ;
                         else fieldName = map.to() ;
-                        columnsBuilder.append("`").append(fieldName).append("`").append(",");
                         /** Get data based on the JSON key specified by the user */
                         Object value = getJsonValue(obj, field.getType(), map);
-                        /** Check if value is a String then we pass to the query value with a single quoted like 'Felix K. Acheampont' */
-                        if (field.getType().equals(String.class)) {
-                            /** Append name to the value query builder with comma */
-                            valuesBuilder.append("'").append(value).append("',");
-                        } else {
-                            /** Append value which is of type Long,Integer,Double without single quoted*/
-                            valuesBuilder.append(value).append(",");
-                        }
-                        Log.d("field_name",field.getName()) ;
+                        try {
+                            if (field.getType().equals(Integer.class) || field.getType() == int.class) {
+                                contentValues.put(fieldName, (int) value);
+                            } else if ((field.getType().equals(Long.class) || field.getType() == long.class)) {
+                                contentValues.put(fieldName, (Long) value);
+                            } else if ((field.getType().equals(Double.class) || field.getType() == double.class)) {
+                                contentValues.put(fieldName, (Double) value);
+                            } else if ((field.getType().equals(Float.class) || field.getType() == float.class)) {
+                                contentValues.put(fieldName, (Float) value);
+                            } else {
+                                contentValues.put(fieldName, (String) value);
+                            }
+                        }catch (NullPointerException e){e.printStackTrace();}
+
                     }
                 }
-
-                /** Make sure to remove any leading and trailing spaces from the string */
-                String columns = columnsBuilder.toString().trim();
-                /** Check if the column query builder genereated above ends with { , } Other wise query string will be wrong */
-                if (columns.substring(columns.length() - 1).equals(",")) {
-                    columns = columns.substring(0, columns.length() - 1); /** Remove last comma from the columns query builder */
-                }
-                /** Add last closing bracker at the end of the column query build generator.
-                 * So the final will be (`name`,`email`,`phone`) {@ Very supper }
-                 */
-                columns += ")";
-
-                /**
-                 * Same thing to the values query builder
-                 * Final will also be ('Felix K. Acheampong','felixacheampong18@gmail.com',0123698547
-                 */
-                String values = valuesBuilder.toString();
-                if (values.substring(values.length() - 1).equals(",")) {
-                    /** Remove any last comma from the query value builder for the query to be a valid query. {@ Query not valid yet until the last closing bracket appended to the string} */
-                    values = values.substring(0, values.length() - 1);
-                }
-
-                /**
-                 * {@ Query validity}
-                 * @We append closing bracket to the last queryBuilder for the query to be a complete valid query
-                 * @Final Result will be this ('Felix K. Acheampong','felixacheampong18@gmail.com',0123698547)
-                 */
-                queryBuilder.append("INSERT INTO ").append(syncClass.getSimpleName()).append(" ").append(columns).append(" VALUES (").append(values).append(")");
                 try{
                     /** Insert data into the table with the automatic query generation */
                     if(getDatabase()!=null) {
-                        getDatabase().execSQL(queryBuilder.toString());
+                        long insert= getDatabase().insertWithOnConflict(tableName,null,contentValues,easySyncItem.getDataExistsStrategy()) ;
+
+                        if(insert>-1){
+                            final int ct = counter;
+                            new Handler(Looper.getMainLooper()).post(() -> {
+                                final int c = ct + 1;
+                                if (syncListener != null) {
+                                    syncListener.onInsert(tableName, jsonArray.length(), c);
+                                }
+                            });
+                        }
                     }else{
-                        getRoomDatabase().execSQL(queryBuilder.toString()) ;
+                        long insert= getRoomDatabase().insert(tableName,easySyncItem.getDataExistsStrategy(),contentValues) ;
+                        if(insert>-1){
+                            final int ct = counter;
+                            new Handler(Looper.getMainLooper()).post(() -> {
+                                final int c = ct + 1;
+                                if (syncListener != null) {
+                                    syncListener.onInsert(tableName, jsonArray.length(), c);
+                                }
+                            });
+                        }
                     }
-                    if(getShowInsertLog()) Log.d("query_"+syncClass.getSimpleName(),queryBuilder.toString()) ;
+                    if(getShowInsertLog()) Log.d("query_"+syncClass.getSimpleName(),"") ;
                 }catch (SQLException e){
                     /** Notify user if authomatic query builder generation is wrong */
                     if(getShowInsertLog()) Log.d("error:"+syncClass.getSimpleName(),e.toString());
                     //Log.d("query:",queryBuilder.toString()) ;
                 }
+                if(syncListener!=null)syncListener.onInsert(tableName,jsonArray.length(),counter);
+                counter++ ;
             }
             /** Dismiss loader */
             if(index>=syncItems.size()-1) {
@@ -277,7 +310,7 @@ public class EasySync {
      * @param syncItems @EasySync Annotated class
      * @return this class
      */
-    public EasySync setSyncItems(List<SyncItem> syncItems){
+    public EasySync setSyncItems(List<EasySyncItem> syncItems){
         this.syncItems = syncItems ;
 
         return this ;
@@ -344,7 +377,7 @@ public class EasySync {
         return headers ;
     }
 
-    public List<SyncItem> getSyncItems() {
+    public List<EasySyncItem> getSyncItems() {
         return syncItems;
     }
 
@@ -372,7 +405,8 @@ public class EasySync {
     public interface SyncListener{
         void onComplete(boolean noErrorFound,List<EasySyncError> easySyncErrors) ; // When sync is complete with no error
         void onFatalError(String errorMessage) ;
-        default void onQueueChanged(int index,SyncItem syncItem){}
+        default void onQueueChanged(int index, EasySyncItem syncItem){}
+        default void onInsert(String tableName,int numberOfItems,int in) {} ;
     }
 
     @Nullable
@@ -410,31 +444,45 @@ public class EasySync {
             Object fieldData = null;
             try {
                 /** Check if field type is an Integer */
-                if (type.equals(Integer.class) || type==int.class) {
-                    fieldData = String.valueOf(jsonObject.getInt(key)); /** Get value as Integer */
-                } else if (type.equals(Float.class) || type==float.class) { /** Check if field type is Float */
-                    fieldData = String.valueOf((float) jsonObject.getDouble(key)); /** Get value as Float */
-                } else if (type.equals(String.class)) { /** Check if value is String */
-                    fieldData = jsonObject.getString(key); /** Get value as String */
-                } else if(type.equals(Double.class) || type==double.class){
-                    fieldData = jsonObject.getDouble(key) ;
-                }
-                else if (type.equals(Long.class) || type==long.class) { /** Check if value is Long */
-                    if (!jsonObject.isNull(key)) { /** Check if value is not Null */
+                if (type.equals(Integer.class) || type == int.class) {
+                    if (map.defaultValue().equals("")) {
+                        if (jsonObject.has(key) && !jsonObject.isNull(key))
+                            fieldData = String.valueOf(jsonObject.getInt(key));
+                    } /** Get value as Integer */
+                    else fieldData = Integer.parseInt(map.defaultValue());
+                } else if (type.equals(Float.class) || type == float.class) { /** Check if field type is Float */
+                    if (map.defaultValue().equals("")) {
+                        if (jsonObject.has(key) && !jsonObject.isNull(key))
+                            fieldData = String.valueOf((float) jsonObject.getDouble(key));
+                    } /** Get value as Float */
+                    else fieldData = Float.parseFloat(map.defaultValue());
+                } else if (type.equals(String.class) || type.equals(Date.class)) { /** Check if value is String */
+                    if (map.defaultValue().equals("")) {
+                        if (jsonObject.has(key) && !jsonObject.isNull(key))
+                            fieldData = jsonObject.getString(key);
+                    } /** Get value as String */
+                    else fieldData = map.defaultValue();
+                } else if (type.equals(Double.class) || type == double.class) {
+                    if (map.defaultValue().equals("")) {
+                        if (jsonObject.has(key) && !jsonObject.isNull(key))
+                            fieldData = jsonObject.optDouble(key);
+                    } else fieldData = Double.parseDouble(map.defaultValue());
+                } else if (type.equals(Long.class) || type == long.class) { /** Check if value is Long */
+                    if (jsonObject.has(key) && !jsonObject.isNull(key)) { /** Check if value is not Null */
                         /** Check if user want to convert long to Date */
                         if (map.toDate()) {
-                            Date date = getDate(jsonObject.getString(key), DATE_FORMAT) ;
-                            if(date!=null) {
+                            Date date = getDate(jsonObject.getString(key), DATE_FORMAT);
+                            if (date != null) {
                                 fieldData = date.getTime();
-                            }else{
-                                fieldData = "" ;
+                            } else {
+                                fieldData = "";
                             }
                         } else if (map.toDatetTime()) { /** Else if to TimeStamp */
-                            Date date = getDate(jsonObject.getString(key), TIME_STATMP_FORMAT) ;
-                            if(date!=null) {
+                            Date date = getDate(jsonObject.getString(key), TIME_STATMP_FORMAT);
+                            if (date != null) {
                                 fieldData = date.getTime();
-                            }else{
-                                fieldData = "" ;
+                            } else {
+                                fieldData = "";
                             }
                         } else {
                             /** Then get the value as raw long */
@@ -448,13 +496,27 @@ public class EasySync {
                 e.printStackTrace();
             }
 
-            Parser parser = map.parser() ;
-            if(parser.aClass()!= Map.class && !parser.methodName().isEmpty()){
-                fieldData = invokeUserDefinedMethod(parser.aClass(),parser.methodName(),fieldData) ;
+            Parser parser = map.parser();
+            if (parser.aClass() != Map.class && !parser.methodName().isEmpty()) {
+                fieldData = invokeUserDefinedMethod(parser.aClass(), parser.methodName(), fieldData);
+            }
+            /** Do not save any null value */
+            if (fieldData == null || fieldData.equals("null")) {
+                fieldData = null;
             }
             return fieldData; /** Return result */
         } else {
-            return ""; /** Else return empty string */
+            return null; /** Else return empty string */
         }
+    }
+
+    public static HashMap<String,Object> getBody(String... strings){
+        HashMap<String,Object> map = new HashMap<>() ;
+        for(String string:strings){
+            String[] explode = string.split("\\=") ;
+            map.put(explode[0],explode[1]) ;
+        }
+
+        return map ;
     }
 }

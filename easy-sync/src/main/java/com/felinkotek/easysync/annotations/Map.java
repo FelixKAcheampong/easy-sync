@@ -8,6 +8,7 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.FIELD)
 public @interface Map {
+    String defaultValue() default "" ;
     String key() default "" ;
     String to() default "" ;
     Parser parser() default @Parser(aClass = Map.class,methodName = "");
