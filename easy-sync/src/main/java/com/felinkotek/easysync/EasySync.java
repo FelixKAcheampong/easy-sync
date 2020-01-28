@@ -40,7 +40,7 @@ public class EasySync {
     private ProgressDialog progressDialog ;
     private SQLiteDatabase database ;
     private static final String DATE_FORMAT = "yyyy-MM-dd" ;
-    private static final String TIMESTAMP_FORMAT = "yyyy-MM-dd'T'HH:mm" ;
+    private static final String TIME_STATMP_FORMAT = "yyyy-MM-dd'T'HH:mm" ;
     private String loadingMessage ;
     private boolean showProgress = true ;
     private boolean setProgressCancelable = false ;
@@ -126,7 +126,7 @@ public class EasySync {
                             new Handler(Looper.getMainLooper()).post(new Runnable() {
                                 @Override
                                 public void run() {
-                                    syncListener.onComplete(syncErrors.size() < 1, syncErrors);
+                                    syncListener.onComplete(syncErrors.size() >0, syncErrors);
                                 }
                             }) ;
                         }
@@ -160,7 +160,7 @@ public class EasySync {
                                             new Handler(Looper.getMainLooper()).post(new Runnable() {
                                                 @Override
                                                 public void run() {
-                                                    syncListener.onComplete(syncErrors.size() < 1, syncErrors);
+                                                    syncListener.onComplete(syncErrors.size() >0, syncErrors);
                                                 }
                                             });
                                         }
@@ -181,7 +181,7 @@ public class EasySync {
                                 new Handler(Looper.getMainLooper()).post(new Runnable() {
                                     @Override
                                     public void run() {
-                                        syncListener.onComplete(syncErrors.size() < 1, syncErrors);
+                                        syncListener.onComplete(syncErrors.size() >0, syncErrors);
                                     }
                                 }) ;
                             }
@@ -306,7 +306,7 @@ public class EasySync {
                 new Handler(Looper.getMainLooper()).post(() -> {
                     this.progressDialog.dismiss();
                     if (syncListener != null)
-                        syncListener.onComplete(syncErrors.size() < 1, syncErrors);
+                        syncListener.onComplete(syncErrors.size() >0, syncErrors);
                 }) ;
             }else startDownload(index+1);
 
@@ -317,7 +317,7 @@ public class EasySync {
                 new Handler(Looper.getMainLooper()).post(() -> {
                     this.progressDialog.dismiss();
                     if (syncListener != null)
-                        syncListener.onComplete(syncErrors.size() < 1, syncErrors);
+                        syncListener.onComplete(syncErrors.size() >0, syncErrors);
                 }) ;
             }else startDownload(index+1);
         }
@@ -538,7 +538,7 @@ public class EasySync {
                                 fieldData = "";
                             }
                         } else if (map.toDateTime()) { /** Else if to TimeStamp */
-                            Date date = getDate(jsonObject.getString(key), TIMESTAMP_FORMAT);
+                            Date date = getDate(jsonObject.getString(key), TIME_STATMP_FORMAT);
                             if (date != null) {
                                 fieldData = date.getTime();
                             } else {

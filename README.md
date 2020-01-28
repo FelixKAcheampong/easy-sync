@@ -1,13 +1,14 @@
-EASY-SYNC-ANDROID
+EASY-SYNC
 ============================
 ***
 
 Sync multiple SQLITE db entities from your API with ease
 ----------------------------
 ***VERSIONS***
-`0.01`
+``VERSIONS =>`` `0.01`,`0.02`
+
 ***INSTALLATION***
-`implementation 'com.github.FelixKAcheampong:easy-sync-android:VERSION'`
+`implementation 'com.github.FelixKAcheampong:easy-sync:VERSION'`
 
 ***USAGE***
 ============================
@@ -27,7 +28,7 @@ Sync multiple SQLITE db entities from your API with ease
 ```java
 @EasySync()
 public class User {
-    @Map(key = "name",to = "username") 
+    @Map(key = "name")
     private String name ;
     @Map(key = "email")
     private String email ;
@@ -63,7 +64,10 @@ public class User {
 `parser = @Parser(aClass = MainActivity.class,methodName = "processUser")`
 Used to process data before saving. Your method should be `public static Object(Object value)` and must return an object to saved in the field/column
 `to = "username"` Use `to` to denote actual table field/column name if it's different from the java field name
-
+`defaultValue` `String` use this to set a default value to a field.
+`toDate` `boolean` This will convert a value `2020-01-21` to `long`
+`toDateTime` `boolean` This will convert the value `2020-01-21T10:59:26` to `long` with date time
+`example`long data = > `1579513269811`
 ***SQLIteOpenHelper database usage***
 ```java
     SQLiteDatabase db = yourSqliteOpenHelper.getWritableDatabase() ;
@@ -92,39 +96,168 @@ Used to process data before saving. Your method should be `public static Object(
 
 *** SYNCLISTENER INTERFACE METHODS ***
 ```java
-@Override
-    public void onComplete(boolean noErrorFound,List<EasySyncError> easySyncErrors) {
-        //easySyncErrors contains each Entity and it related error message
-        if(noErrorFound){
+    @Override
+    public void onComplete(boolean onErrorFound,List<EasySyncError> easySyncErrors) {
+        if(!onErrorFound){
             Toast.makeText(this,"Completed with no error",Toast.LENGTH_LONG).show();
         }else{
-            Toast.makeText(this,"Error found",Toast.LENGTH_LONG).show();
-            String i = easySyncErrors.get(0).getMessage() ;
-            Log.d("error_message",i) ;
-            // Loop to see all errors
+            for(EasySyncError err: easySyncErrors){
+                 Log.d("error","class:"+err.getEntity()+", error:"+err.getMessage()) ;
+            }
         }
     }
 
     @Override
     public void onFatalError(String errorMessage) {
-        // This happens when serious error occur which resulted in quiting the sync process
-        // Example is when no db is set
+        // This only happens when database is not set
     }
 
     @Override
-    public void onQueueChanged(int index, SyncItem syncItem) {
+    public void onQueueChanged(int index, EasySyncItem syncItem) {
         // Use to track the current sync item index
-        int percentage = (index/syncItems.size())*100 ;
-        spinner.setProgress(percentage) ;
+        // Use this to set your items progess bar
+    }
+    
+    @Override
+    public void onInsert(boolean isSuccess, EasySyncItem easySyncItem, int numberOfItems, int inserted) {
+           // isSuccess = true if insertion was successfull otherwise false,
+           // easySyncItem = easySyncItem being inserted
+           // numberOfItems = number of records from your api (`JSONArray records`)
+           // inserted = total number of items inserted
+           
+           /*Use this to set your insertion progress bar*/
     }
 ```
 
-***METHODS***
+***Sync Item Constructors***
+============================================================
+```java
+/**
+     * Get request with specific url
+     * @param syncClass Entity to store data from endpoint
+     * @param url EndPoint url
+     */
+    public EasySyncItem(@NonNull Class<?> syncClass,@NonNull String url) {
+        this.syncClass = syncClass;
+        this.url = url;
+    }
+
+    /**
+     * POST request with specific url and body
+     * @param syncClass Entity to store data from endpoint
+     * @param url EndPoint url
+     * @param payload Request payload as HashMap
+     */
+    public EasySyncItem(@NonNull Class<?> syncClass,@NonNull String url,@NonNull HashMap<String,Object> payload){
+        this.syncClass = syncClass;
+        this.url = url;
+        this.body = payload ;
+    }
+
+    /**
+     * GET request with specific url and data insertion strategy
+     * @param syncClass Entity to store data from endpoint
+     * @param url EndPoint url
+     * @param dataExistsStrategy Data insertion strategy
+     */
+    public EasySyncItem(@NonNull Class<?> syncClass,@NonNull String url,int dataExistsStrategy) {
+        this.syncClass = syncClass;
+        this.url = url;
+        this.dataExistsStrategy = dataExistsStrategy ;
+    }
+
+    /**
+     * POST request with specific url, request payload and data insertion strategy
+     * @param syncClass Entity to store data from endpoint
+     * @param url EndPoint url
+     * @param payload Request payload as HashMap
+     * @param dataExistsStrategy Data insertion strategy
+     */
+    public EasySyncItem(@NonNull Class<?> syncClass,@NonNull String url,@NonNull HashMap<String,Object> payload,int dataExistsStrategy){
+        this.syncClass = syncClass;
+        this.url = url;
+        this.body = payload ;
+        this.dataExistsStrategy = dataExistsStrategy ;
+    }
+
+    /**
+     * POST request using main endpoint, request payload and data insertion strategy
+     * @param syncClass Entity to store data from endpoint
+     * @param payload Request payload as HashMap
+     * @param dataExistsStrategy data insertion strategy
+     */
+    public EasySyncItem(@NonNull Class<?> syncClass,@NonNull HashMap<String,Object> payload,int dataExistsStrategy){
+        this.syncClass = syncClass;
+        this.body = payload ;
+        this.dataExistsStrategy = dataExistsStrategy ;
+    }
+
+    /**
+     * POST request using main endpoint, request payload and data insertion strategy
+     * @param syncClass Entity to store data from endpoint
+     * @param payload Request payload as HashMap
+     * @param dataExistsStrategy data insertion strategy
+     */
+    public EasySyncItem(@NonNull Class<?> syncClass,@NonNull JSONObject payload,int dataExistsStrategy){
+        this.syncClass = syncClass;
+        this.bodyJson = payload ;
+        this.dataExistsStrategy = dataExistsStrategy ;
+    }
+
+    /**
+     * POST request using main endpoint, request payload and data insertion strategy
+     * @param syncClass Entity to store data from endpoint
+     * @param payload Request payload as HashMap
+     */
+    public EasySyncItem(@NonNull Class<?> syncClass,@NonNull HashMap<String,Object> payload){
+        this.syncClass = syncClass;
+        this.body = payload ;
+    }
+
+    /**
+     * POST request using main endpoint, request payload and data insertion strategy
+     * @param syncClass Entity to store data from endpoint
+     * @param payload Request payload as HashMap
+     */
+    public EasySyncItem(@NonNull Class<?> syncClass,@NonNull JSONObject payload){
+        this.syncClass = syncClass;
+        this.bodyJson = payload ;
+    }
+
+    /**
+     * POST request with specific url and request payload
+     * @param syncClass Entity to store data from endpoint
+     * @param url EndPoint url
+     * @param payload Request payload as JSONOBJECT
+     */
+    public EasySyncItem(@NonNull Class<?> syncClass,@NonNull String url,@NonNull JSONObject payload){
+        this.syncClass = syncClass;
+        this.url = url;
+        this.bodyJson = payload ;
+    }
+
+    /**
+     * POST requwst with specific url, request payload as JSONOBJECT and data insertion strategy
+     * @param syncClass Entity to store data from endpoint
+     * @param url EndPoint url
+     * @param payload Request payload as JSONOBJECT
+     * @param dataExistsStrategy Data insertion strategy
+     */
+    public EasySyncItem(@NonNull Class<?> syncClass,@NonNull String url,@NonNull JSONObject payload,int dataExistsStrategy){
+        this.syncClass = syncClass;
+        this.url = url;
+        this.bodyJson = payload ;
+        this.dataExistsStrategy = dataExistsStrategy ;
+    }
+```
+
+***Methods***
 ==========================================
-***SETTERS***
+***Setters***
 `setSyncItems(List<SyncItem>)` Set items to be synced
 `setDatabase(SQLiteDatabase)` set sqliteDatabase
-`showInsertLog()` This will log insert statment to LogCat ;
+`setPostBaseUrl` Set a base url if all your `POST` request uses the same base url, instead of passing same url to each EasySyncItem
+`setClearDataBeforeSync` set to true if you want your records to be deleted before syncing
 `showProgress(boolean)` This will show a progress dialog and dismiss authomatically when syncing is done. Defualt is `true`
 `setSyncListener(EasySync.SyncListener)` get callbacks of success and errors
 `setRoomDatabase(SupportSQLiteDatabase)` set this if you are using Room Persistence Database

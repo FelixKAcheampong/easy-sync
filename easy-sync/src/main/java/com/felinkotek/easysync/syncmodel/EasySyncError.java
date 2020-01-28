@@ -11,7 +11,7 @@ public class EasySyncError {
         this.message = message;
     }
 
-    public Class<?> getaClass() {
+    public Class<?> getEntity() {
         return aClass;
     }
 
