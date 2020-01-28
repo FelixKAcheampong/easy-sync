@@ -1,9 +1,11 @@
 package com.felinkotek.easysync;
 
+import androidx.room.OnConflictStrategy;
+
 public interface DataExistsStrategy{
-        int IGNORE = 1 ;
-        int REPLACE = 2 ;
-        int ROLLBACK = 3 ;
-        int ABORT = 4 ;
-        int FAIL = 5 ;
+        int IGNORE = OnConflictStrategy.IGNORE;
+        int REPLACE = OnConflictStrategy.REPLACE ;
+        int ROLLBACK = OnConflictStrategy.ROLLBACK ;
+        int ABORT = OnConflictStrategy.ABORT ;
+        int FAIL = OnConflictStrategy.FAIL ;
 }

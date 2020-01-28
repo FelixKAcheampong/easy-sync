@@ -1,3 +1,4 @@
+/*
 package com.felinkotek.easysync;
 
 import android.os.Bundle;
@@ -20,3 +21,4 @@ public class Main extends AppCompatActivity {
         easySyncItems.add(new EasySyncItem(Main.class,EasySync.getBody("wow=wow","user_name"), DataExistsStrategy.REPLACE)) ;
     }
 }
+*/

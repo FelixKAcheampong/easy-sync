@@ -13,5 +13,5 @@ public @interface Map {
     String to() default "" ;
     Parser parser() default @Parser(aClass = Map.class,methodName = "");
     boolean toDate() default false ;
-    boolean toDatetTime() default false ;
+    boolean toDateTime() default false ;
 }

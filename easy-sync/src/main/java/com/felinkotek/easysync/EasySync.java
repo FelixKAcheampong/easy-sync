@@ -10,6 +10,7 @@ import android.os.Looper;
 import android.util.Log;
 
 import androidx.annotation.Nullable;
+import androidx.room.Delete;
 import androidx.room.OnConflictStrategy;
 import androidx.sqlite.db.SupportSQLiteDatabase;
 
@@ -39,7 +40,7 @@ public class EasySync {
     private ProgressDialog progressDialog ;
     private SQLiteDatabase database ;
     private static final String DATE_FORMAT = "yyyy-MM-dd" ;
-    private static final String TIME_STATMP_FORMAT = "yyyy-MM-dd'T'HH:mm" ;
+    private static final String TIMESTAMP_FORMAT = "yyyy-MM-dd'T'HH:mm" ;
     private String loadingMessage ;
     private boolean showProgress = true ;
     private boolean setProgressCancelable = false ;
@@ -49,6 +50,8 @@ public class EasySync {
     private boolean showInsertLog = false;
     private List<EasySyncError> syncErrors = new ArrayList<>() ;
     private SupportSQLiteDatabase roomDatabase ;
+    private String postBaseUrl ;
+    private boolean clearDataBeforeSync = false ;
 
     /**
      * Constructor accepts Context
@@ -132,6 +135,11 @@ public class EasySync {
                 }
                 String tableName = (easySync.tableName().trim().equals("")) ? syncItems.get(index).getSyncClass().getSimpleName() : easySync.tableName();
 
+                /** Check if item url is null and postbase url not nulll */
+                if(syncItems.get(index).getUrl()==null && getPostBaseUrl()!=null){
+                    /** Set url using main postBaseUrl */
+                    syncItems.get(index).setUrl(getPostBaseUrl()) ;
+                }
                 apiCall.downloadData(context, syncItems.get(index).getUrl(), new ApiCall.DownloadFinish() {
                     @Override
                     public void onSuccess(JSONArray payloadResponse) {
@@ -141,7 +149,7 @@ public class EasySync {
                             public void run() {
                                 try {
                                     /** Save data */
-                                    saveData(tableName,payloadResponse,syncItems.get(index).getSyncClass(),index);
+                                    saveData(tableName,payloadResponse,syncItems.get(index),index);
                                 }catch (JSONException e){
                                     /** Dismiss progress dialog */
                                     progressDialog.dismiss();
@@ -181,7 +189,7 @@ public class EasySync {
                     }
                 },getHeaders(),syncItems.get(index));
             }
-        }) ;
+        }).start() ;
     }
 
     public void dismissDialog(){
@@ -193,15 +201,20 @@ public class EasySync {
      * @param jsonArray response payload
      * @throws JSONException catch Exception
      */
-    private void saveData(String tableName,JSONArray jsonArray,Class<?> syncClass,int index) throws JSONException {
+    private void saveData(String tableName,JSONArray jsonArray,EasySyncItem easySyncItem,int index) throws JSONException {
         /** Get all class properties {@Fields} */
+        Class<?> syncClass = easySyncItem.getSyncClass() ;
         Field[] fields = syncClass.getDeclaredFields() ;
         /** Get Annotation of type @EasySync */
         com.felinkotek.easysync.annotations.EasySync liveSync = syncClass.getAnnotation(com.felinkotek.easysync.annotations.EasySync.class) ;
         /** Check if class has been Annotated with @EasySync */
         if(liveSync!=null) {
-            EasySyncItem easySyncItem = syncItems.get(index) ;
             /** Loop through JSONArray */
+            if(isClearDataBeforeSync()){
+                String deleteQuery = "DELETE FROM "+tableName ;
+                if(getDatabase()!=null) getDatabase().execSQL(deleteQuery);
+                else getRoomDatabase().execSQL(deleteQuery);
+            }
             int counter = 0 ;
             for(int i=0;i<jsonArray.length();i++) {
                 JSONObject obj = jsonArray.getJSONObject(i) ;
@@ -229,60 +242,83 @@ public class EasySync {
                             } else if ((field.getType().equals(Float.class) || field.getType() == float.class)) {
                                 contentValues.put(fieldName, (Float) value);
                             } else {
-                                contentValues.put(fieldName, (String) value);
+                                contentValues.put(fieldName, ((String) value).replace("'","`"));
                             }
                         }catch (NullPointerException e){e.printStackTrace();}
-
+                        catch (ClassCastException e){e.printStackTrace();}
                     }
                 }
                 try{
                     /** Insert data into the table with the automatic query generation */
+                    final int ct = counter;
                     if(getDatabase()!=null) {
-                        long insert= getDatabase().insertWithOnConflict(tableName,null,contentValues,easySyncItem.getDataExistsStrategy()) ;
+                        long insert= easySyncItem.getDataExistsStrategy()!=null ? getDatabase().insertWithOnConflict(tableName,null,contentValues,easySyncItem.getDataExistsStrategy()) :
+                                getDatabase().insert(tableName,null,contentValues) ;
 
                         if(insert>-1){
-                            final int ct = counter;
                             new Handler(Looper.getMainLooper()).post(() -> {
                                 final int c = ct + 1;
                                 if (syncListener != null) {
-                                    syncListener.onInsert(tableName, jsonArray.length(), c);
+                                    syncListener.onInsert(true,easySyncItem, jsonArray.length(), c);
+                                }
+                            });
+                        }else{
+                            new Handler(Looper.getMainLooper()).post(() -> {
+                                final int c = ct + 1;
+                                if (syncListener != null) {
+                                    syncListener.onInsert(false,easySyncItem, jsonArray.length(), c);
                                 }
                             });
                         }
                     }else{
+                        easySyncItem.setDataExistsStrategy(easySyncItem.getDataExistsStrategy()==null ? DataExistsStrategy.REPLACE : easySyncItem.getDataExistsStrategy()) ;
                         long insert= getRoomDatabase().insert(tableName,easySyncItem.getDataExistsStrategy(),contentValues) ;
                         if(insert>-1){
-                            final int ct = counter;
                             new Handler(Looper.getMainLooper()).post(() -> {
                                 final int c = ct + 1;
                                 if (syncListener != null) {
-                                    syncListener.onInsert(tableName, jsonArray.length(), c);
+                                    syncListener.onInsert(true,easySyncItem, jsonArray.length(), c);
+                                }
+                            });
+                        }else{
+                            new Handler(Looper.getMainLooper()).post(() -> {
+                                final int c = ct + 1;
+                                if (syncListener != null) {
+                                    syncListener.onInsert(false,easySyncItem, jsonArray.length(), c);
                                 }
                             });
                         }
                     }
-                    if(getShowInsertLog()) Log.d("query_"+syncClass.getSimpleName(),"") ;
+
                 }catch (SQLException e){
-                    /** Notify user if authomatic query builder generation is wrong */
-                    if(getShowInsertLog()) Log.d("error:"+syncClass.getSimpleName(),e.toString());
-                    //Log.d("query:",queryBuilder.toString()) ;
+                    final int ct = counter;
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        final int c = ct + 1;
+                        if (syncListener != null) {
+                            syncListener.onInsert(false,easySyncItem, jsonArray.length(), c);
+                        }
+                    });
                 }
-                if(syncListener!=null)syncListener.onInsert(tableName,jsonArray.length(),counter);
                 counter++ ;
             }
             /** Dismiss loader */
             if(index>=syncItems.size()-1) {
-                this.progressDialog.dismiss();
-                if (syncListener != null) syncListener.onComplete(syncErrors.size()<1,syncErrors);
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    this.progressDialog.dismiss();
+                    if (syncListener != null)
+                        syncListener.onComplete(syncErrors.size() < 1, syncErrors);
+                }) ;
             }else startDownload(index+1);
 
         }else{
             /** Notify user if class with Annotation {@SyncLive} is not set */
             if(index>=syncItems.size()-1) {
                 /** Dismiss loader */
-                this.progressDialog.dismiss();
-                if (syncListener != null)
-                    syncListener.onComplete(syncErrors.size()<1,syncErrors);
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    this.progressDialog.dismiss();
+                    if (syncListener != null)
+                        syncListener.onComplete(syncErrors.size() < 1, syncErrors);
+                }) ;
             }else startDownload(index+1);
         }
     }
@@ -399,14 +435,34 @@ public class EasySync {
         return this ;
     }
 
+    public String getPostBaseUrl() {
+        return postBaseUrl;
+    }
+
+    public EasySync setPostBaseUrl(String postBaseUrl) {
+        this.postBaseUrl = postBaseUrl;
+
+        return this ;
+    }
+
+    public boolean isClearDataBeforeSync() {
+        return clearDataBeforeSync;
+    }
+
+    public EasySync setClearDataBeforeSync(boolean clearDataBeforeSync) {
+        this.clearDataBeforeSync = clearDataBeforeSync;
+
+        return this ;
+    }
+
     /**
      * Interface for callbacks
      */
     public interface SyncListener{
-        void onComplete(boolean noErrorFound,List<EasySyncError> easySyncErrors) ; // When sync is complete with no error
+        void onComplete(boolean onErrorFound,List<EasySyncError> easySyncErrors) ; // When sync is complete with no error
         void onFatalError(String errorMessage) ;
         default void onQueueChanged(int index, EasySyncItem syncItem){}
-        default void onInsert(String tableName,int numberOfItems,int in) {} ;
+        default void onInsert(boolean isSuccess,EasySyncItem easySyncItem,int numberOfItems,int inserted) {} ;
     }
 
     @Nullable
@@ -448,24 +504,28 @@ public class EasySync {
                     if (map.defaultValue().equals("")) {
                         if (jsonObject.has(key) && !jsonObject.isNull(key))
                             fieldData = String.valueOf(jsonObject.getInt(key));
+                        else if(!map.defaultValue().trim().equals("")) fieldData = map.defaultValue() ;
                     } /** Get value as Integer */
                     else fieldData = Integer.parseInt(map.defaultValue());
                 } else if (type.equals(Float.class) || type == float.class) { /** Check if field type is Float */
                     if (map.defaultValue().equals("")) {
                         if (jsonObject.has(key) && !jsonObject.isNull(key))
                             fieldData = String.valueOf((float) jsonObject.getDouble(key));
+                        else if(!map.defaultValue().trim().equals("")) fieldData = map.defaultValue() ;
                     } /** Get value as Float */
                     else fieldData = Float.parseFloat(map.defaultValue());
                 } else if (type.equals(String.class) || type.equals(Date.class)) { /** Check if value is String */
                     if (map.defaultValue().equals("")) {
                         if (jsonObject.has(key) && !jsonObject.isNull(key))
                             fieldData = jsonObject.getString(key);
+                        else if(!map.defaultValue().trim().equals("")) fieldData = map.defaultValue() ;
                     } /** Get value as String */
                     else fieldData = map.defaultValue();
                 } else if (type.equals(Double.class) || type == double.class) {
                     if (map.defaultValue().equals("")) {
                         if (jsonObject.has(key) && !jsonObject.isNull(key))
                             fieldData = jsonObject.optDouble(key);
+                        else if(!map.defaultValue().trim().equals("")) fieldData = map.defaultValue() ;
                     } else fieldData = Double.parseDouble(map.defaultValue());
                 } else if (type.equals(Long.class) || type == long.class) { /** Check if value is Long */
                     if (jsonObject.has(key) && !jsonObject.isNull(key)) { /** Check if value is not Null */
@@ -477,8 +537,8 @@ public class EasySync {
                             } else {
                                 fieldData = "";
                             }
-                        } else if (map.toDatetTime()) { /** Else if to TimeStamp */
-                            Date date = getDate(jsonObject.getString(key), TIME_STATMP_FORMAT);
+                        } else if (map.toDateTime()) { /** Else if to TimeStamp */
+                            Date date = getDate(jsonObject.getString(key), TIMESTAMP_FORMAT);
                             if (date != null) {
                                 fieldData = date.getTime();
                             } else {
@@ -488,7 +548,7 @@ public class EasySync {
                             /** Then get the value as raw long */
                             fieldData = String.valueOf(jsonObject.getLong(key));
                         }
-                    }
+                    }else if(!map.defaultValue().trim().equals("")) fieldData = map.defaultValue() ;
                 }
             } catch (JSONException e) { /** Catch JSON Exception */
                 e.printStackTrace();
