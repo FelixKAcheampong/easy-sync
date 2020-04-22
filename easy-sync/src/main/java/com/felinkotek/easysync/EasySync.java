@@ -93,7 +93,7 @@ public class EasySync {
         }
 
         /** Show progress dialog*/
-        this.progressDialog.show();
+        if(isShowProgress())  this.progressDialog.show();
 
         /** Initialize ApiCall Object from {@datasyncer} library */
         startDownload(0);

@@ -5,7 +5,18 @@ EASY-SYNC
 Sync multiple SQLITE db entities from your API with ease
 ----------------------------
 ***VERSIONS***
-``VERSIONS =>`` `0.01`,`0.02`
+``VERSIONS =>`` `0.01`,`0.02`,`0.03`
+
+**Gradle**
+```java
+maven { url "https://jitpack.io" }
+
+compileOptions {
+    sourceCompatibility JavaVersion.VERSION_1_8
+    targetCompatibility JavaVersion.VERSION_1_8
+}
+```
+
 
 ***INSTALLATION***
 `implementation 'com.github.FelixKAcheampong:easy-sync:VERSION'`
@@ -37,7 +48,7 @@ public class User {
 }
 ```
 
->
+
     Example DATA for below setup
 `{
     "data":[
