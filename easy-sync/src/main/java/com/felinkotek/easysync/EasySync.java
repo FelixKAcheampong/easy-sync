@@ -33,6 +33,10 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 
+/**
+ * Create By Felix K. Acheampong
+ * {@github}https://github.com/FelixKAcheampong/easy-sync
+ */
 @SuppressWarnings("DanglingJavadoc")
 public class EasySync {
     private Context context ;
@@ -41,7 +45,7 @@ public class EasySync {
     private SQLiteDatabase database ;
     private static final String DATE_FORMAT = "yyyy-MM-dd" ;
     private static final String TIME_STATMP_FORMAT = "yyyy-MM-dd'T'HH:mm" ;
-    private String loadingMessage ;
+    private String loadingMessage = null ;
     private boolean showProgress = true ;
     private boolean setProgressCancelable = false ;
     private List<EasySyncItem> syncItems ;
@@ -62,9 +66,6 @@ public class EasySync {
         this.context = context ;
         /** Initialize progressDialog */
         this.progressDialog = new ProgressDialog(context) ;
-        /** Set dialog message */
-        if(getLoadingMessage()!=null) this.progressDialog.setMessage(getLoadingMessage());
-        else this.progressDialog.setMessage("Loading...");
         /** Set to cancelable */
         this.progressDialog.setCancelable(isSetProgressCancelable());
         apiCall = new ApiCall() ;
@@ -78,6 +79,10 @@ public class EasySync {
      * Start syncing progress after setting and initializing all Objects
      */
     public void startEasySync(){
+        /** Set dialog message */
+        if(getLoadingMessage()!=null) this.progressDialog.setMessage(getLoadingMessage());
+        else this.progressDialog.setMessage("Loading...");
+
         if(getDatabase()==null && getRoomDatabase()==null){
             syncListener.onFatalError("No db found");
             return ;
@@ -151,6 +156,7 @@ public class EasySync {
                                     /** Save data */
                                     saveData(tableName,payloadResponse,syncItems.get(index),index);
                                 }catch (JSONException e){
+                                    e.printStackTrace();
                                     /** Dismiss progress dialog */
                                     progressDialog.dismiss();
                                     /** Notify user of if any json key provided cannot be found in the response payload */
@@ -231,17 +237,37 @@ public class EasySync {
                         if(map.to().isEmpty()) fieldName = field.getName() ;
                         else fieldName = map.to() ;
                         /** Get data based on the JSON key specified by the user */
-                        Object value = getJsonValue(obj, field.getType(), map);
+                        Object value = null;
+                        if(map.key().contains("/")){
+                            String[] keys = map.key().split("/") ;
+                            JSONObject object = obj ;
+                            int multiCounter=0 ;
+                            do{
+                                if(multiCounter==keys.length-1){
+                                    value = getJsonValue(object, field.getType(), map);
+                                    break;
+                                }else{
+                                    try {
+                                        object = getMulti(object, keys[multiCounter]);
+                                    }catch (JSONException e){
+                                        break;
+                                    }
+                                }
+                                multiCounter++ ;
+                            }while (true) ;
+                        }else value = getJsonValue(obj, field.getType(), map);
                         try {
                             if (field.getType().equals(Integer.class) || field.getType() == int.class) {
-                                contentValues.put(fieldName, (int) value);
+                                contentValues.put(fieldName, Integer.parseInt(value+""));
                             } else if ((field.getType().equals(Long.class) || field.getType() == long.class)) {
-                                contentValues.put(fieldName, (Long) value);
+                                contentValues.put(fieldName, Long.parseLong(value+""));
                             } else if ((field.getType().equals(Double.class) || field.getType() == double.class)) {
-                                contentValues.put(fieldName, (Double) value);
+                                contentValues.put(fieldName, Double.parseDouble(value+""));
                             } else if ((field.getType().equals(Float.class) || field.getType() == float.class)) {
-                                contentValues.put(fieldName, (Float) value);
-                            } else {
+                                contentValues.put(fieldName, Float.parseFloat(value+""));
+                            } else if(field.getType().equals(Boolean.class) || field.getType() ==  boolean.class) {
+                                contentValues.put(fieldName,Boolean.parseBoolean(value+""));
+                            }else{
                                 contentValues.put(fieldName, ((String) value).replace("'","`"));
                             }
                         }catch (NullPointerException e){e.printStackTrace();}
@@ -291,6 +317,7 @@ public class EasySync {
                     }
 
                 }catch (SQLException e){
+                    e.printStackTrace();
                     final int ct = counter;
                     new Handler(Looper.getMainLooper()).post(() -> {
                         final int c = ct + 1;
@@ -322,6 +349,11 @@ public class EasySync {
             }else startDownload(index+1);
         }
     }
+
+    private JSONObject getMulti(JSONObject data,String key) throws JSONException{
+        return data.getJSONObject(key) ;
+    }
+
     private Object invokeUserDefinedMethod(Class<?> c,String methodName,Object value){
         Object result = "" ;
         try {
@@ -496,6 +528,10 @@ public class EasySync {
         if (map != null) {
             /** Get JSON key specified by user */
             String key = map.key();
+            if(key.contains("/")){
+                String[] split = key.split("/") ;
+                key = split[split.length-1] ;
+            }
             /** Initialize Object to null */
             Object fieldData = null;
             try {
@@ -507,6 +543,13 @@ public class EasySync {
                         else if(!map.defaultValue().trim().equals("")) fieldData = map.defaultValue() ;
                     } /** Get value as Integer */
                     else fieldData = Integer.parseInt(map.defaultValue());
+                } else if (type.equals(Boolean.class) || type == boolean.class) { /** Check if field type is Float */
+                    if (map.defaultValue().equals("")) {
+                        if (jsonObject.has(key) && !jsonObject.isNull(key))
+                            fieldData = String.valueOf(jsonObject.getBoolean(key));
+                        else if(!map.defaultValue().trim().equals("")) fieldData = map.defaultValue() ;
+                    } /** Get value as Float */
+                    else fieldData = Float.parseFloat(map.defaultValue());
                 } else if (type.equals(Float.class) || type == float.class) { /** Check if field type is Float */
                     if (map.defaultValue().equals("")) {
                         if (jsonObject.has(key) && !jsonObject.isNull(key))
