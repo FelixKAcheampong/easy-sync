@@ -5,7 +5,7 @@ EASY-SYNC
 Sync multiple SQLITE db entities from your API with ease
 ----------------------------
 ***VERSIONS***
-``VERSIONS =>`` `0.01`,`0.02`,`0.03`
+``VERSIONS =>`` `0.01`,`0.02`,`0.03`,`0.04`
 
 **Gradle**
 ```java
