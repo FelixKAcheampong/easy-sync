@@ -238,10 +238,12 @@ public class EasySync {
                         else fieldName = map.to() ;
                         /** Get data based on the JSON key specified by the user */
                         Object value = null;
+                        //Check if value is in multi dimen json
                         if(map.key().contains("/")){
                             String[] keys = map.key().split("/") ;
                             JSONObject object = obj ;
                             int multiCounter=0 ;
+                            // Dive into it
                             do{
                                 if(multiCounter==keys.length-1){
                                     value = getJsonValue(object, field.getType(), map);
