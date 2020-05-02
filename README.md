@@ -234,6 +234,11 @@ Used to process data before saving. Your method should be `public static Object(
 `setSyncListener(EasySync.SyncListener)` get callbacks of success and errors
 `setRoomDatabase(SupportSQLiteDatabase)` set this if you are using Room Persistence Database
 `setLoadingMessage(String)` set message to be shown in the progress dialog. default is `Loading...`
-`setHeaders(HashMap<String, String>)` overrite default Http headers. Send your `Auth` here
+`setHeaders(HashMap<String, String>)` overrite default Http headers. Send your `Authenticatoin Heaers` here
 `startEasySync()` Finally, start the Easy Sync
+
+***Watch Video Tutorial***
+==================================
+![alt text](https://img.youtube.com/vi/4JRd5J4m5Tk/0.jpg)
+
 
