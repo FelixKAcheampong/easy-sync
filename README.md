@@ -239,6 +239,6 @@ Used to process data before saving. Your method should be `public static Object(
 
 ***Watch Video Tutorial***
 ==================================
-![alt text](https://img.youtube.com/vi/4JRd5J4m5Tk/0.jpg)
+[![alt text](https://img.youtube.com/vi/4JRd5J4m5Tk/0.jpg)](https://www.youtube.com/watch?v=4JRd5J4m5Tk&t=4s)
 
 
